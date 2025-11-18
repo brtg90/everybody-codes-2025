@@ -1,8 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use rayon::prelude::*;
-use memoize::memoize;
-
 use utils::read_lines;
 
 #[derive(Debug, Clone, Eq, Hash, PartialEq)]
@@ -40,13 +37,19 @@ impl ChessBoard {
                 });
             });
 
-        ChessBoard {
+        let mut board = ChessBoard {
             sheep,
             dragon,
             safe,
             width,
             height,
-        }
+        };
+        board.sort_sheep();
+        board
+    }
+
+    fn sort_sheep(&mut self) {
+        self.sheep.sort_unstable();
     }
 
     fn move_all_sheep(&mut self) {
@@ -60,6 +63,7 @@ impl ChessBoard {
         self.sheep = self.sheep.iter_mut()
             .map(|pos| if pos == &old_pos {(pos.0 + 1, pos.1)} else {*pos})
             .collect();
+        self.sort_sheep();
     }
 
     fn get_possible_sheep_moves(&self) -> Vec<((isize, isize),(isize, isize))> {
@@ -74,21 +78,16 @@ impl ChessBoard {
         sheep_pos.0 >= self.height
     }
 
-    fn remove_sheep(&mut self, visited: &Vec<(isize, isize)>) -> usize {
+    fn remove_sheep(&mut self, visited: &[(isize, isize)]) -> usize {
         let before = self.sheep.len();
-        self.sheep = self.sheep.iter()
-            .filter(|&&pos| !visited.contains(&pos))
-            .cloned()
-            .collect();
-
+        self.sheep.retain(|&pos| !visited.contains(&pos));
+        self.sort_sheep();
         before - self.sheep.len()
     }
 
     fn remove_sheep_current_dragon(&mut self) {
-        self.sheep = self.sheep.iter()
-            .filter(|&&pos| self.dragon != pos)
-            .cloned()
-            .collect();
+        self.sheep.retain(|&pos| self.dragon != pos || self.safe.contains(&pos));
+        self.sort_sheep();
     }
 
     fn move_sheep_get_boards(&self) -> Vec<ChessBoard> {
@@ -101,7 +100,7 @@ impl ChessBoard {
         }
 
         sheep_moves.into_iter()
-            .filter(|(_, new)| !self.sheep_escapes(&new))
+            .filter(|(_, new)| !self.sheep_escapes(new))
             .map(|(old, _)| {
                 let mut board = self.clone();
                 board.move_one_sheep(old);
@@ -109,26 +108,6 @@ impl ChessBoard {
             })
             .collect::<Vec<ChessBoard>>()
     }
-
-    // fn move_dragon_get_boards(&self) -> Vec<ChessBoard> {
-    //     // Return a copy of the boards after each possible dragon move on the current board
-    //     let row = self.dragon.0;
-    //     let col = self.dragon.1;
-    //
-    //     let mut new_points = Vec::from([(row + 2, col + 1), (row + 2, col - 1), (row + 1, col + 2), (row + 1, col - 2),
-    //         (row - 1, col + 2), (row - 1, col - 2), (row - 2, col + 1), (row - 2, col - 1)]);
-    //     new_points = new_points.into_iter()
-    //         .filter(|&point| is_valid_move(&point, self.width, self.height))
-    //         .collect::<Vec<(isize, isize)>>();
-    //
-    //     new_points.into_iter()
-    //         .map(|new| {
-    //             let mut board = self.clone();
-    //             board.dragon = new;
-    //             board
-    //         })
-    //         .collect::<Vec<ChessBoard>>()
-    // }
 
     fn print_board(&self) {
         (0..self.height)
@@ -194,298 +173,51 @@ fn part_2() {
 fn part_3() {
     let board = ChessBoard::from_text("inputs/day10pt3.txt");
     let mut memo = HashMap::new();
-    let unique_sequences = dfs_memo(board, &mut memo);
+    let unique_sequences = dfs_memo(board, &mut memo, false);
+
     println!("Part 3: {}", unique_sequences);
 }
 
-// fn part_3() {
-//     let mut board = ChessBoard::from_text("inputs/day10pt3.txt");
-//
-//     // let mut total_sequences = 0;
-//
-//     // let mut dragon_pos_stack: Vec<(isize, isize)> = vec![board.dragon];
-//     // while !dragon_pos_stack.is_empty() {
-//     //     let dragon_pos = dragon_pos_stack.pop().unwrap();
-//     //
-//     //     let sheep_moves = board.get_possible_sheep_moves(&dragon_pos);
-//     //     for move_combination in sheep_moves {
-//     //         let old = move_combination.0;
-//     //         let sheep_pos = move_combination.1;
-//     //
-//     //         if board.sheep_escapes(&sheep_pos) {
-//     //             continue;
-//     //         }
-//     //         let mut new_board = board.clone();
-//     //         new_board.sheep = new_board.sheep.iter_mut()
-//     //             .map(|pos| if *pos == old {
-//     //                 sheep_pos.clone()
-//     //             }
-//     //             else {
-//     //                 pos.clone()
-//     //             })
-//     //             .collect();
-//     //
-//     //
-//     //     }
-//     //
-//     //     let mut visited: HashSet<(isize, isize)> = HashSet::new();
-//
-//
-//     // }
-//     let unique_sequences = dfs(board);
-//     println!("Part 3: {:?}", unique_sequences);
-// }
 
-fn round_of_chess(board: &mut ChessBoard) -> isize {
-    let mut unique_sequences = 0;
+fn dfs_memo(board: ChessBoard, memo: &mut HashMap<(ChessBoard, bool), usize>, dragon_turn: bool) -> usize {
+    let original = board.clone();
 
-    let dragon = board.dragon;
-    let sheep_moves = board.get_possible_sheep_moves();
-
-    if board.sheep.is_empty() {
-        return 1;
-    }
-
-    if sheep_moves.is_empty() {
-        let dragon_moves = move_dragon_max_times(dragon, 0, 1, (board.width, board.height));
-        // println!("No sheep move possible, dragon moves are: {:?}", dragon_moves);
-        // for dragon_move in dragon_moves {
-        //     let mut board_clone = board.clone();
-        //     board_clone.dragon = dragon_move;
-        //     // board_clone.print_board();
-        //     // println!("Dragon move: {:?}", dragon_move);
-        //     board_clone.remove_sheep(&vec![dragon_move]);
-        //     unique_sequences += round_of_chess(&mut board_clone);
-        // }
-        let sum: isize = dragon_moves.par_iter()
-            .map(|dragon_move| {
-                let mut board_clone = board.clone();
-                board_clone.dragon = dragon_move.to_owned();
-                // board_clone.print_board();
-                // println!("Dragon move: {:?}", dragon_move);
-                board_clone.remove_sheep(&vec![dragon_move.to_owned()]);
-                round_of_chess(&mut board_clone)
-            })
-            .sum();
-        unique_sequences += sum;
-
-    } else {
-        unique_sequences += sheep_moves.par_iter()
-            .map(|move_combination| {
-            let mut board = board.clone();
-            let old = move_combination.0;
-            let sheep_pos = move_combination.1;
-
-            if board.sheep_escapes(&sheep_pos) {
-                // println!("Sheep escapes by {:?}", sheep_pos);
-               return 0;
-            }
-
-            board.move_one_sheep(old);
-            // println!("Sheep move: {:?}", sheep_pos);
-            let dragon_moves = move_dragon_max_times(dragon, 0, 1, (board.width, board.height));
-            // println!("Sheep move {:?}, dragon moves are: {:?}", move_combination, dragon_moves);
-            // for dragon_move in dragon_moves {
-            //     let mut board_clone = board.clone();
-            //     board_clone.dragon = dragon_move;
-            //     // board_clone.print_board();
-            //     // println!("Dragon move: {:?}", dragon_move);
-            //     board_clone.remove_sheep(&vec![dragon_move]);
-            //     unique_sequences += round_of_chess(&mut board_clone);
-            // }
-            let sum: isize = dragon_moves.par_iter()
-                .map(|dragon_move| {
-                    let mut board_clone = board.clone();
-                    board_clone.dragon = dragon_move.to_owned();
-                    // board_clone.print_board();
-                    // println!("Dragon move: {:?}", dragon_move);
-                    board_clone.remove_sheep(&vec![dragon_move.to_owned()]);
-                    round_of_chess(&mut board_clone)
-                })
-                .sum();
-            sum
-        })
-            .sum::<isize>();
-        // for move_combination in sheep_moves {
-        //     let mut board = board.clone();
-        //     let old = move_combination.0;
-        //     let sheep_pos = move_combination.1;
-        //
-        //     if board.sheep_escapes(&sheep_pos) {
-        //         // println!("Sheep escapes by {:?}", sheep_pos);
-        //         return 0;
-        //     }
-        //
-        //     board.move_one_sheep(old);
-        //     // println!("Sheep move: {:?}", sheep_pos);
-        //     let dragon_moves = move_dragon_max_times(dragon, 0, 1, (board.width, board.height));
-        //     // println!("Sheep move {:?}, dragon moves are: {:?}", move_combination, dragon_moves);
-        //     // for dragon_move in dragon_moves {
-        //     //     let mut board_clone = board.clone();
-        //     //     board_clone.dragon = dragon_move;
-        //     //     // board_clone.print_board();
-        //     //     // println!("Dragon move: {:?}", dragon_move);
-        //     //     board_clone.remove_sheep(&vec![dragon_move]);
-        //     //     unique_sequences += round_of_chess(&mut board_clone);
-        //     // }
-        //     let sum: isize = dragon_moves.par_iter()
-        //         .map(|dragon_move| {
-        //             let mut board_clone = board.clone();
-        //             board_clone.dragon = dragon_move.to_owned();
-        //             // board_clone.print_board();
-        //             // println!("Dragon move: {:?}", dragon_move);
-        //             board_clone.remove_sheep(&vec![dragon_move.to_owned()]);
-        //             round_of_chess(&mut board_clone)
-        //         })
-        //         .sum();
-        //     unique_sequences += sum;
-        // }
-    }
-
-
-    // println!("This part should never have to be reached!");
-    // println!("Unique sequences: {:?}", unique_sequences);
-    unique_sequences
-}
-
-fn recurse_board(mut board: ChessBoard) -> usize {
-    let mut unique_sequences = 0;
-
-    if board.sheep.is_empty() {
-        return 1;
-    }
-    let dragon = board.dragon;
-    let sheep_moves = board.get_possible_sheep_moves();
-
-    if sheep_moves.is_empty() {
-        let dragon_moves = move_dragon_max_times(board.dragon, 0, 1, (board.width, board.height));
-        for dragon_move in dragon_moves {
-            let mut board_clone = board.clone();
-            board_clone.dragon = dragon_move;
-            board_clone.remove_sheep(&vec![dragon_move]);
-            unique_sequences += recurse_board(board_clone);
-        }
-    }
-    else {
-        for sheep_combination in sheep_moves {
-            let old = sheep_combination.0;
-            let new = sheep_combination.1;
-            if board.sheep_escapes(&new) {
-                return 0;
-            }
-
-            let mut board_clone = board.clone();
-            board_clone.move_one_sheep(new);
-
-            let dragon_moves = move_dragon_max_times(dragon, 0, 1, (board.width, board.height));
-            for dragon_move in dragon_moves {
-                let mut board_clone_2 = board_clone.clone();
-                board_clone_2.dragon = dragon_move;
-                board_clone_2.remove_sheep(&vec![dragon_move]);
-                unique_sequences += recurse_board(board_clone_2);
-            }
-        }
-    }
-    unique_sequences
-}
-
-// #[memoize]
-// fn dfs(mut board: ChessBoard) -> usize {
-//     let mut unique_sequences: HashSet<Vec<ChessBoard>> = HashSet::new();
-//
-//     let mut stack: Vec<(ChessBoard, Vec<ChessBoard>)> = vec![(board, vec![])];
-//
-//     while let Some((board, mut path)) = stack.pop() {
-//         if path.contains(&board) {
-//             continue;
-//         }
-//         // board.print_board();
-//         path.push(board.clone());
-//
-//         if board.sheep.is_empty() {
-//             // println!("All sheep killed");
-//             // board.print_board();
-//             unique_sequences.insert(path.clone());
-//             continue;
-//         }
-//         let sheep_move_boards = board.move_sheep_get_boards();
-//
-//         if sheep_move_boards.len() == 1 && sheep_move_boards[0] == board {
-//             // println!("No sheep moves found!");
-//             // board.print_board();
-//         }
-//
-//         if sheep_move_boards.is_empty() {
-//             println!("Empty move board!");
-//             continue;
-//         }
-//
-//         for sheep_move_board in &sheep_move_boards {
-//             // println!("Sheep moves");
-//             // sheep_move_board.print_board();
-//         }
-//
-//         // sheep_move_boards.into_iter()
-//         //     .flat_map(|b| move_dragon_get_boards(b))
-//         //     .for_each(|mut b| {
-//         //         b.remove_sheep_current_dragon();
-//         //         stack.push((b, path.clone()));
-//         //     });
-//
-//         for sheep_board in sheep_move_boards {
-//             let dragon_boards = move_dragon_get_boards(sheep_board);
-//
-//             // If dragon has no valid moves, this path also fails
-//             if dragon_boards.is_empty() {
-//                 continue;
-//             }
-//
-//             for mut dragon_board in dragon_boards {
-//                 dragon_board.remove_sheep_current_dragon();
-//                 stack.push((dragon_board, path.clone()));
-//             }
-//         }
-//         // for dragon_board in &dragon_boards {
-//             // println!("Dragon moves");
-//             // dragon_board.print_board();
-//             // if board.sheep.is_empty() {
-//             //     println!("All sheep killed");
-//             // }
-//         // }
-//         // stack.append(&mut dragon_boards);
-//     }
-//     unique_sequences.len()
-// }
-
-fn dfs_memo(board: ChessBoard, memo: &mut HashMap<ChessBoard, usize>) -> usize {
-    // Check memo
-    if let Some(&result) = memo.get(&board) {
-        return 0;
+    if let Some(&result) = memo.get(&(board.clone(), dragon_turn)) {
+        return result;
     }
 
     if board.sheep.is_empty() {
+        memo.insert((board, dragon_turn), 1);
         return 1;
-    }
-
-    let sheep_move_boards = board.move_sheep_get_boards();
-
-    if sheep_move_boards.is_empty() {
-        return 0; // Sheep escaped
     }
 
     let mut total = 0;
-    for sheep_board in sheep_move_boards {
-        let dragon_boards = move_dragon_get_boards(sheep_board);
+
+    if dragon_turn {
+        let dragon_boards = move_dragon_get_boards(board);
 
         for mut dragon_board in dragon_boards {
             dragon_board.remove_sheep_current_dragon();
-            total += dfs_memo(dragon_board, memo);
+            let result = dfs_memo(dragon_board.clone(), memo, false);
+            total += result;
         }
     }
+    else {
+        let sheep_move_boards = board.move_sheep_get_boards();
 
-    memo.insert(board, total);
-    let counts = memo.values().max().unwrap();
-    println!("Total: {}", counts);
+        if sheep_move_boards.is_empty() {
+            memo.insert((original, dragon_turn), 0);
+            return 0;
+        }
+
+
+        for sheep_board in sheep_move_boards {
+            let result = dfs_memo(sheep_board.clone(), memo, true);
+            total += result;
+
+        }
+    }
+    memo.insert((original, dragon_turn), total);
     total
 }
 
@@ -509,15 +241,9 @@ fn move_dragon_get_boards(board: ChessBoard) -> Vec<ChessBoard> {
         .collect::<Vec<ChessBoard>>()
 }
 
-fn move_dragon_and_kill(mut board: ChessBoard, new_pos: &(isize, isize)) -> ChessBoard {
-    board.dragon = new_pos.to_owned();
-    board.remove_sheep(&vec![new_pos.to_owned()]);
-    board
-}
-
 fn get_killed_sheep(visited: &HashSet<(isize, isize)>, board: &ChessBoard) -> Vec<(isize, isize)> {
     board.sheep.iter()
-        .filter(|&pos| visited.contains(&pos) && !board.safe.contains(pos))
+        .filter(|&pos| visited.contains(pos) && !board.safe.contains(pos))
         .cloned()
         .collect()
 }
@@ -548,15 +274,4 @@ fn move_dragon_max_times(dragon: (isize, isize), n: isize, max: isize, dimension
 
 fn is_valid_move(end: &(isize, isize), width: isize, height: isize) -> bool {
     end.0 >= 0 && end.0 < height && end.1 >= 0 && end.1 < width
-}
-
-fn print_sheep_chess_board(board: &ChessBoard) {
-    let mut print_board: Vec<Vec<char>> = vec![vec!['.'; board.width as usize]; board.height as usize];
-    board.sheep.iter()
-        .for_each(|(row, col)| print_board[*row as usize][*col as usize] = 'S');
-
-    for row in print_board {
-        println!("{}", row.iter().collect::<String>());
-    }
-    println!("\n\n")
 }
