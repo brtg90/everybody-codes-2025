@@ -77,9 +77,7 @@ fn part_3() {
             round += 1;
         }
     }
-    
     round += phase_2_rapid(columns);
-
     println!("Part 3: {:?}", round);
 }
 
