@@ -65,10 +65,7 @@ fn part_3() {
 
 fn calculate_end_point_distance(instructions: &[String]) -> usize {
     let (wall, end) = parse_wall(HashSet::new(), instructions, 0, (0,0));
-    println!("Wall done");
     let corners = find_grid_corners(&wall);
-    println!("Corners: {:?}", corners);
-    println!("end point {:?}", end);
 
     let mut queue : VecDeque<(Point, usize)> = VecDeque::from([((0, 0), 0)]);
     let mut visited: HashSet<Point> = HashSet::new();
@@ -107,20 +104,6 @@ fn wall_contains_point(wall: &HashSet<Line>, point: &Point) -> bool {
         .any(|line| line.contains_point(point))
 }
 
-fn print_wall(wall: &[Point]) {
-    for row in -10..10_isize {
-        let mut print_row = vec![];
-        for col in -10..10_isize {
-            if wall.contains(&(row, col)) {
-                print_row.push('#')
-            } else {
-                print_row.push('.');
-            }
-        }
-        println!("{:?}", print_row);
-    }
-}
-
 fn is_valid_point(point: &Point, corners: &[Point]) -> bool {
     point.0 >= corners[0].0 && point.0 <= corners[1].0 && point.1 >= corners[0].1 && point.1 <= corners[1].1
 }
@@ -130,10 +113,6 @@ fn find_grid_corners(wall: &HashSet<Line>) -> [Point; 2] {
     let min_row = wall.iter().min_by_key(|a| a.get_min_row()).unwrap().get_min_row() - 2;
     let max_col = wall.iter().max_by_key(|a| a.get_max_col()).unwrap().get_max_col() + 2;
     let min_col = wall.iter().min_by_key(|a| a.get_min_col()).unwrap().get_min_col() - 2;
-    // let max_row = wall.iter().max_by_key(|a, b| a.get_max_row().cmp(&b.get_max_row())).unwrap().get_max_row();
-    // let min_row = wall.iter().min_by_key(|a, b| a.get_min_row().cmp(&b.get_m_row())).unwrap().get_max_row();
-    // let max_col = wall.iter().max_by(|a, b| a.1.cmp(&b.1)).unwrap().1;
-    // let min_col = wall.iter().min_by(|a, b| a.1.cmp(&b.1)).unwrap().1;
 
     [(min_row, min_col), (max_row, max_col)]
 }
