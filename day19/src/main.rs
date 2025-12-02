@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 use utils::read_lines;
 
@@ -10,49 +10,49 @@ fn main() {
 
 fn part_1() {
     let input = parse("inputs/day19pt1.txt");
-    println!("{:?}", input);
-    // let flaps = count_flaps_for_triplets(&input, 0, 0);
-    let flaps = bfs(&input, 0, 0);
+    let flaps = bfs(&input);
     println!("Part 1: {:?}", flaps);
 }
 
 fn part_2() {
-    println!("Part 2: {:?}", 0);
+    let input = parse("inputs/day19pt2.txt");
+    let flaps = bfs(&input);
+    println!("Part 2: {:?}", flaps);
 }
 
 fn part_3() {
     println!("Part 3: {:?}", 0);
 }
 
-fn bfs(triplets: &Vec<Vec<isize>>, x: isize, y: isize) -> isize {
-    let mut queue = VecDeque::new();
-    queue.push_back((x, y, 0, 0));
+fn bfs(triplets: &HashMap<isize, Vec<Vec<isize>>>) -> isize {
+    let mut x_points = triplets.keys().cloned().collect::<Vec<_>>();
+    x_points.sort();
+    x_points.insert(0, 0);
 
-    // Track best flaps for each (x, y, triplet_num) state
-    let mut best: HashMap<(isize, isize, usize), isize> = HashMap::new();
-    let mut min_flaps = isize::MAX;
+    let mut current: HashMap<isize, isize> = HashMap::new();
+    current.insert(0, 0);
 
-    while let Some((x, y, flaps, triplet_num)) = queue.pop_front() {
-        let state = (x, y, triplet_num);
-        if let Some(&prev_best) = best.get(&state) {
-            if flaps > prev_best {
-                continue;
+    for (i, x) in x_points.iter().enumerate() {
+        if i == x_points.len() - 1 {
+            break;
+        }
+        let mut new: HashMap<isize, isize> = HashMap::new();
+
+        for (&curr_y, &curr_flaps) in &current {
+            for opening in &triplets[&x_points[i + 1]] {
+                if let Some(options) = take_obstacle(opening, *x, curr_y) {
+                    for option in options {
+                        new.entry(option[1])
+                            .and_modify(|v| *v = (*v).min(curr_flaps + option[2]))
+                            .or_insert(curr_flaps + option[2]);
+                    }
+                }
             }
         }
-        best.insert(state, flaps);
+        current = new;
 
-        if triplet_num == triplets.len() {
-            min_flaps = min_flaps.min(flaps);
-            continue;
-        }
-
-        if let Some(options) = take_obstacle(&triplets[triplet_num], x, y) {
-            for option in options {
-                queue.push_back((option[0], option[1], flaps + option[2], triplet_num + 1));
-            }
-        }
     }
-    min_flaps
+    *current.values().min().unwrap()
 }
 
 
@@ -83,12 +83,18 @@ fn take_obstacle(obstacle: &[isize], x: isize, y: isize) -> Option<Vec<Vec<isize
     Some(possible_end_points)
 }
 
-fn parse(filename: &str) -> Vec<Vec<isize>> {
+fn parse(filename: &str) -> HashMap<isize, Vec<Vec<isize>>> {
+    let mut obstacles = HashMap::new();
     read_lines(filename)
         .iter()
-        .map(|line| line.split(",")
-            .map(|x| x.parse::<isize>()
-                .unwrap())
-            .collect::<Vec<isize>>())
-        .collect()
+        .for_each(|line| {
+            let vec = line.split(",")
+                .map(|x| x.parse::<isize>()
+                    .unwrap())
+                .collect::<Vec<isize>>();
+            obstacles.entry(vec[0])
+                .and_modify(|v: &mut Vec<Vec<isize>>| v.push(vec.clone()))
+                .or_insert(vec![vec]);
+        });
+    obstacles
 }
